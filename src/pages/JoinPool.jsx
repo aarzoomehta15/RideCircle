@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronRight, Search } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -21,28 +21,68 @@ const JoinPool = () => {
     date: "",
   });
 
-  useEffect(() => {
-    loadPools();
-  }, []);
+  // Function to determine if a pool should be displayed to the current user
+  const isPoolAvailableForUser = useCallback((pool) => {
+    // 1. Gender Restriction (Must be hidden from men)
+    if (pool.type === 'women-only' && user.gender === 'male') {
+      return false;
+    }
 
-  const loadPools = async () => {
+    // 2. User already a participant or pool is full (already handled in loadPools, but good redundancy)
+    const isParticipant = pool.participants.some((p) => p.user._id === user._id);
+    const isFull = pool.participants.length >= pool.maxSeats;
+    if (isParticipant || isFull) {
+        return false;
+    }
+
+    // 3. Apply Local Filters (Type/Date filtering must happen here since the core fetch removes that section)
+    // The previous implementation was flawed and inefficiently doing these client-side.
+    // Since we reverted to the original files, we must re-implement the original filtering here 
+    // to function correctly alongside the new gender filter, as the core fetch is unfiltered.
+    
+    // Type filter
+    if (filters.type !== "all" && pool.type !== filters.type) {
+      return false;
+    }
+
+    // Community filter (Relies on client-side check from original code)
+    if (filters.community) {
+      const creator = creators[pool._id];
+      // NOTE: This check remains synonym-unaware per original file context, 
+      // but should be replaced by the backend filtering fix we discussed previously.
+      if (!creator || creator.community !== user.community) {
+        return false;
+      }
+    }
+
+    // Date filter
+    if (filters.date) {
+      const poolDate = new Date(pool.date).toISOString().split("T")[0];
+      if (poolDate !== filters.date) {
+        return false;
+      }
+    }
+
+
+    return true;
+  }, [user.gender, user.community, filters, creators]); // Dependencies include user gender/community for filtering
+
+  // Original loadPools logic
+  const loadPools = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await poolService.getPools({ status: "upcoming" });
+      // NOTE: We are fetching ALL upcoming pools, the subsequent filter will hide restricted ones.
+      const response = await poolService.getPools({ status: "upcoming" }); //
 
-      // Filter out pools user is already in
-      const availablePools = (response.pools || []).filter(
-        (pool) =>
-          !pool.participants.some((p) => p._id === user._id) &&
-          pool.participants.length < pool.maxSeats
-      );
+      // Filter out pools user is already in (Moved to filter chain below for consistency)
+      const initialPools = (response.pools || []);
 
-      setPools(availablePools);
+      setPools(initialPools);
 
       // Create creators map
       const creatorsMap = {};
-      availablePools.forEach((pool) => {
+      initialPools.forEach((pool) => {
         if (pool.createdBy) {
           creatorsMap[pool._id] = pool.createdBy;
         }
@@ -53,7 +93,11 @@ const JoinPool = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []); // Dependencies cleared to only run on mount (will re-add logic below)
+
+  useEffect(() => {
+    loadPools();
+  }, [loadPools]);
 
   const handleJoinPool = async (poolId) => {
     try {
@@ -73,31 +117,8 @@ const JoinPool = () => {
     });
   };
 
-  // Apply filters
-  const filteredPools = pools.filter((pool) => {
-    // Type filter
-    if (filters.type !== "all" && pool.type !== filters.type) {
-      return false;
-    }
-
-    // Community filter
-    if (filters.community) {
-      const creator = creators[pool._id];
-      if (!creator || creator.community !== user.community) {
-        return false;
-      }
-    }
-
-    // Date filter
-    if (filters.date) {
-      const poolDate = new Date(pool.date).toISOString().split("T")[0];
-      if (poolDate !== filters.date) {
-        return false;
-      }
-    }
-
-    return true;
-  });
+  // Apply all filters (including the new gender filter)
+  const filteredPools = pools.filter(isPoolAvailableForUser);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
