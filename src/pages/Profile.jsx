@@ -51,7 +51,8 @@ const Profile = () => {
       }
 
       // Load feedbacks
-      const feedbackData = await feedbackService.getFeedbackForUser(user._id);
+      // FIX: Use user.id instead of user._id
+      const feedbackData = await feedbackService.getFeedbackForUser(user.id);
       setFeedbacks(feedbackData.feedbacks || []);
     } catch (err) {
       setError(err.message || "Failed to load profile data");
@@ -84,7 +85,8 @@ const Profile = () => {
     try {
       setSaving(true);
       setError(null);
-      const response = await authService.updateProfile(user._id, formData);
+      // FIX: Use user.id instead of user._id
+      const response = await authService.updateProfile(user.id, formData);
       updateUser(response.user);
       setEditing(false);
       alert("Profile updated successfully!");
