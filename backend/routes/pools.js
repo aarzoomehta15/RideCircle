@@ -32,6 +32,22 @@ router.post('/', protect, [
       });
     }
 
+    const { type } = req.body;
+    const creator = await User.findById(req.user._id);
+
+    // NEW SECURITY LOGIC: Restrict pool creation based on user attributes
+    if (type === 'women-only' && creator.gender === 'male') {
+        return res.status(403).json({
+            message: 'Male users cannot create "Women Only" pools.'
+        });
+    }
+
+    if (type === 'community' && (!creator.community || creator.community.length === 0)) {
+        return res.status(400).json({
+            message: 'You must belong to at least one community to create a "Community Members Only" pool.'
+        });
+    }
+
     const poolData = {
       ...req.body,
       createdBy: req.user._id,
