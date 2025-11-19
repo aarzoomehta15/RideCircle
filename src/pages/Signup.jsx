@@ -1,8 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Users } from "lucide-react";
+import { Users, X, ChevronDown, Check } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { validateForm } from "../utils/validation";
+
+const COMMUNITY_OPTIONS = [
+  "TIET Patiala",
+  "Delhi University",
+  "ABC Office",
+  "XYZ Society",
+];
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -13,32 +20,57 @@ const Signup = () => {
     password: "",
     phone: "",
     gender: "other",
-    community: "",
-    preferences: {
-      womenOnly: false,
-      communityOnly: false,
-      verifiedOnly: true,
-    },
+    community: [], // Changed to array
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  
+  // State for in-place multi-select UI
+  const [isCommunityDropdownOpen, setIsCommunityDropdownOpen] = useState(false);
+  const communityRef = useRef(null);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (communityRef.current && !communityRef.current.contains(event.target)) {
+        setIsCommunityDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+  
+  const handleRemoveCommunity = (communityToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      community: prev.community.filter((c) => c !== communityToRemove),
+    }));
+    setError("");
+  };
+
+  const handleToggleCommunity = (communityToToggle) => {
+    setFormData((prev) => {
+      const isSelected = prev.community.includes(communityToToggle);
+      const newCommunity = isSelected
+        ? prev.community.filter((c) => c !== communityToToggle)
+        : [...prev.community, communityToToggle];
+
+      return { ...prev, community: newCommunity };
+    });
+    setIsCommunityDropdownOpen(false);
+    setError("");
+  };
+  
   const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value, type } = e.target;
 
-    if (name.startsWith("preferences.")) {
-      const prefName = name.split(".")[1];
+    // Standard input handler (community is handled separately by the toggle function)
+    if (name !== 'community') {
       setFormData({
         ...formData,
-        preferences: {
-          ...formData.preferences,
-          [prefName]: checked,
-        },
-      });
-    } else {
-      setFormData({
-        ...formData,
-        [name]: type === "checkbox" ? checked : value,
+        [name]: type === "checkbox" ? e.target.checked : value,
       });
     }
     setError("");
@@ -63,10 +95,14 @@ const Signup = () => {
     setLoading(true);
 
     try {
-      await signup(formData);
+      const dataToSubmit = {
+        ...formData,
+        community: formData.community || [],
+      };
+      
+      await signup(dataToSubmit);
       navigate("/dashboard");
     } catch (err) {
-      // err may be a string, an object with { message } or a validation object from server
       if (!err) {
         setError("Signup failed. Please try again.");
       } else if (typeof err === "string") {
@@ -74,7 +110,6 @@ const Signup = () => {
       } else if (err.message) {
         setError(err.message);
       } else {
-        // Fallback: pretty-print object (e.g. { errors: { email: '...' } })
         try {
           setError(JSON.stringify(err));
         } catch (e) {
@@ -85,6 +120,8 @@ const Signup = () => {
       setLoading(false);
     }
   };
+  
+  const availableCommunities = COMMUNITY_OPTIONS.filter(c => !formData.community.includes(c));
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -181,60 +218,67 @@ const Signup = () => {
               </select>
             </div>
 
-            <div>
+            <div className="relative" ref={communityRef}>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Community/Organization
               </label>
-              <input
-                type="text"
-                name="community"
-                value={formData.community}
-                onChange={handleChange}
-                placeholder="e.g., XYZ College, ABC Corp"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-              />
+              
+              {/* Multi-Select Input Field */}
+              <div
+                className={`flex items-center justify-between px-4 py-3 border ${
+                  isCommunityDropdownOpen ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-300'
+                } rounded-lg cursor-pointer transition`}
+                onClick={() => setIsCommunityDropdownOpen(!isCommunityDropdownOpen)}
+              >
+                <span className={`text-gray-500 ${formData.community.length > 0 ? 'text-gray-900' : ''}`}>
+                  {formData.community.length > 0 ? 'Click to add/remove...' : 'Select communities...'}
+                </span>
+                <ChevronDown 
+                  size={16} 
+                  className={`text-gray-400 transition-transform ${isCommunityDropdownOpen ? 'rotate-180' : ''}`} 
+                />
+              </div>
+
+              {/* Tags/Bubbles Display */}
+              {formData.community.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {formData.community.map((tag) => (
+                    <div
+                      key={tag}
+                      className="flex items-center bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-medium"
+                    >
+                      <span>{tag}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCommunity(tag)}
+                        className="ml-2 text-blue-700 hover:text-blue-900 transition"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Dropdown Menu */}
+              {isCommunityDropdownOpen && availableCommunities.length > 0 && (
+                <div className="absolute top-full left-0 z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {availableCommunities.map((option) => (
+                    <div
+                      key={option}
+                      className="px-4 py-2 cursor-pointer hover:bg-indigo-50 flex justify-between items-center text-gray-900 text-sm"
+                      onClick={() => handleToggleCommunity(option)}
+                    >
+                      <span>{option}</span>
+                      <Users size={16} className="text-indigo-500"/>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-            <p className="text-sm font-medium text-gray-700 mb-3">
-              Ride Preferences
-            </p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                name="preferences.womenOnly"
-                checked={formData.preferences.womenOnly}
-                onChange={handleChange}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-              <span className="text-sm text-gray-700">
-                Prefer women-only rides
-              </span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                name="preferences.communityOnly"
-                checked={formData.preferences.communityOnly}
-                onChange={handleChange}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-              <span className="text-sm text-gray-700">
-                Prefer same community rides
-              </span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                name="preferences.verifiedOnly"
-                checked={formData.preferences.verifiedOnly}
-                onChange={handleChange}
-                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-              <span className="text-sm text-gray-700">Only verified users</span>
-            </label>
-          </div>
+          {/* REMOVE: Removed Ride Preferences section entirely */}
 
           <button
             type="submit"

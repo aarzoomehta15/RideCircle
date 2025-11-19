@@ -42,15 +42,10 @@ const userSchema = new mongoose.Schema({
     default: 'other'
   },
   community: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'Community name cannot be more than 100 characters']
+    type: [String], // CHANGE: Community is now an array of strings
+    default: [],
   },
-  preferences: {
-    womenOnly: { type: Boolean, default: false },
-    communityOnly: { type: Boolean, default: false },
-    verifiedOnly: { type: Boolean, default: true }
-  },
+  // CHANGE: Removed 'preferences' object completely
   trustScore: {
     type: Number,
     default: 50,

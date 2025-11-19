@@ -17,66 +17,18 @@ const JoinPool = () => {
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({
     type: "all",
-    community: false,
+    // CHANGE: Removed 'community' filter from state
     date: "",
   });
 
-  // Function to determine if a pool should be displayed to the current user
-  const isPoolAvailableForUser = useCallback((pool) => {
-    // 1. Gender Restriction (Must be hidden from men)
-    if (pool.type === 'women-only' && user.gender === 'male') {
-      return false;
-    }
-
-    // 2. User already a participant or pool is full (already handled in loadPools, but good redundancy)
-    const isParticipant = pool.participants.some((p) => p.user._id === user._id);
-    const isFull = pool.participants.length >= pool.maxSeats;
-    if (isParticipant || isFull) {
-        return false;
-    }
-
-    // 3. Apply Local Filters (Type/Date filtering must happen here since the core fetch removes that section)
-    // The previous implementation was flawed and inefficiently doing these client-side.
-    // Since we reverted to the original files, we must re-implement the original filtering here 
-    // to function correctly alongside the new gender filter, as the core fetch is unfiltered.
-    
-    // Type filter
-    if (filters.type !== "all" && pool.type !== filters.type) {
-      return false;
-    }
-
-    // Community filter (Relies on client-side check from original code)
-    if (filters.community) {
-      const creator = creators[pool._id];
-      // NOTE: This check remains synonym-unaware per original file context, 
-      // but should be replaced by the backend filtering fix we discussed previously.
-      if (!creator || creator.community !== user.community) {
-        return false;
-      }
-    }
-
-    // Date filter
-    if (filters.date) {
-      const poolDate = new Date(pool.date).toISOString().split("T")[0];
-      if (poolDate !== filters.date) {
-        return false;
-      }
-    }
-
-
-    return true;
-  }, [user.gender, user.community, filters, creators]); // Dependencies include user gender/community for filtering
-
-  // Original loadPools logic
   const loadPools = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      // NOTE: We are fetching ALL upcoming pools, the subsequent filter will hide restricted ones.
-      const response = await poolService.getPools({ status: "upcoming" }); //
+      // Fetch all upcoming pools
+      const response = await poolService.getPools({ status: "upcoming" });
 
-      // Filter out pools user is already in (Moved to filter chain below for consistency)
-      const initialPools = (response.pools || []);
+      const initialPools = response.pools || [];
 
       setPools(initialPools);
 
@@ -93,11 +45,63 @@ const JoinPool = () => {
     } finally {
       setLoading(false);
     }
-  }, []); // Dependencies cleared to only run on mount (will re-add logic below)
+  }, []);
 
   useEffect(() => {
     loadPools();
   }, [loadPools]);
+
+  // CORE LOGIC: Filter pools based on visibility rules and user-selected filters
+  const isPoolAvailableForUser = useCallback((pool) => {
+    const creator = creators[pool._id];
+    
+    // Normalize user and creator communities (as arrays)
+    // NOTE: Community fields should now be arrays due to the previous set of fixes.
+    const userCommunities = Array.isArray(user?.community) ? user.community : [];
+    const creatorCommunities = Array.isArray(creator?.community) ? creator.community : [];
+
+    // 1. User already a participant or pool is full
+    const isParticipant = pool.participants.some((p) => p.user._id === user.id);
+    const isFull = pool.participants.filter(p => p.status === 'joined').length >= pool.maxSeats;
+    if (isParticipant || isFull) {
+        return false;
+    }
+
+    // 2. Pool Type Visibility Rules (The core requirement)
+    
+    // a. Women-Only Restriction
+    if (pool.type === 'women-only' && user.gender === 'male') {
+        return false;
+    }
+    
+    // b. Community-Only Restriction (CORE NEW LOGIC)
+    // If the pool is community-only, the user must share AT LEAST ONE community with the creator.
+    if (pool.type === 'community') {
+        // Check for intersection: returns true if any community in the creator's list is also in the user's list.
+        const hasSharedCommunity = creatorCommunities.some(c => userCommunities.includes(c));
+        
+        if (!hasSharedCommunity) {
+            return false;
+        }
+    }
+
+    // 3. Optional UI Filters
+    
+    // a. Type filter
+    if (filters.type !== "all" && pool.type !== filters.type) {
+      return false;
+    }
+
+    // b. Date filter
+    if (filters.date) {
+      const poolDate = new Date(pool.date).toISOString().split("T")[0];
+      if (poolDate !== filters.date) {
+        return false;
+      }
+    }
+
+    return true;
+  }, [user, filters, creators]);
 
   const handleJoinPool = async (poolId) => {
     try {
@@ -117,7 +121,6 @@ const JoinPool = () => {
     });
   };
 
-  // Apply all filters (including the new gender filter)
   const filteredPools = pools.filter(isPoolAvailableForUser);
 
   return (
@@ -169,25 +172,11 @@ const JoinPool = () => {
                 />
               </div>
 
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 cursor-pointer p-2">
-                  <input
-                    type="checkbox"
-                    name="community"
-                    checked={filters.community}
-                    onChange={handleFilterChange}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    Same community only
-                  </span>
-                </label>
-              </div>
-
-              <div className="flex items-end">
+              {/* CHANGE: Combined clear filter into last column and removed 'Same community only' toggle */}
+              <div className="md:col-span-2 flex items-end justify-end">
                 <button
                   onClick={() =>
-                    setFilters({ type: "all", community: false, date: "" })
+                    setFilters({ type: "all", date: "" })
                   }
                   className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
                 >
@@ -208,7 +197,7 @@ const JoinPool = () => {
               <div className="bg-white p-12 rounded-xl shadow-md text-center">
                 <Search size={48} className="mx-auto mb-4 text-gray-400" />
                 <p className="text-gray-600 mb-2">
-                  No pools found matching your filters
+                  No pools found matching your criteria
                 </p>
                 <button
                   onClick={() => navigate("/create-pool")}

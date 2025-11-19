@@ -22,7 +22,7 @@ router.post('/signup', [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('phone').isLength({ min: 10, max: 10 }).isNumeric().withMessage('Phone must be 10 digits'),
   body('gender').optional().isIn(['male', 'female', 'other']).withMessage('Invalid gender'),
-  body('community').optional().trim().isLength({ max: 100 }).withMessage('Community name too long')
+  body('community').optional().isArray().withMessage('Community must be an array of strings') 
 ], async (req, res) => {
   try {
     // Check for validation errors
@@ -34,7 +34,7 @@ router.post('/signup', [
       });
     }
 
-    const { name, email, password, phone, gender, community, preferences } = req.body;
+    const { name, email, password, phone, gender, community } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -51,12 +51,8 @@ router.post('/signup', [
       password,
       phone,
       gender: gender || 'other',
-      community,
-      preferences: preferences || {
-        womenOnly: false,
-        communityOnly: false,
-        verifiedOnly: true
-      }
+      community: community || [],
+      // CHANGE: Removed preferences creation
     });
 
     // Generate token
@@ -72,7 +68,7 @@ router.post('/signup', [
         phone: user.phone,
         gender: user.gender,
         community: user.community,
-        preferences: user.preferences,
+        // CHANGE: Removed preferences from user object
         trustScore: user.trustScore
       }
     });
@@ -136,7 +132,7 @@ router.post('/login', [
         phone: user.phone,
         gender: user.gender,
         community: user.community,
-        preferences: user.preferences,
+        // CHANGE: Removed preferences from user object
         trustScore: user.trustScore
       }
     });
@@ -154,7 +150,7 @@ router.post('/login', [
 router.put('/profile/:id', protect, [
   body('name').optional().trim().isLength({ min: 2, max: 50 }).withMessage('Name must be 2-50 characters'),
   body('phone').optional().isLength({ min: 10, max: 10 }).isNumeric().withMessage('Phone must be 10 digits'),
-  body('community').optional().trim().isLength({ max: 100 }).withMessage('Community name too long')
+  body('community').optional().isArray().withMessage('Community must be an array of strings')
 ], async (req, res) => {
   try {
     // Check for validation errors
@@ -181,6 +177,7 @@ router.put('/profile/:id', protect, [
     delete updates.email;
     delete updates.trustScore;
     delete updates.isVerified;
+    delete updates.preferences; // CHANGE: Removed preferences from updates cleanup
 
     const user = await User.findByIdAndUpdate(
       id,
@@ -203,7 +200,7 @@ router.put('/profile/:id', protect, [
         phone: user.phone,
         gender: user.gender,
         community: user.community,
-        preferences: user.preferences,
+        // CHANGE: Removed preferences from user object
         trustScore: user.trustScore
       }
     });
@@ -230,7 +227,7 @@ router.get('/me', protect, async (req, res) => {
         phone: user.phone,
         gender: user.gender,
         community: user.community,
-        preferences: user.preferences,
+        // CHANGE: Removed preferences from user object
         trustScore: user.trustScore,
         isVerified: user.isVerified
       }

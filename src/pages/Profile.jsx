@@ -1,12 +1,31 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, Shield, Star, Users, AlertTriangle } from "lucide-react";
+import { ChevronRight, Shield, Star, Users, AlertTriangle, X, ChevronDown } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { authService } from "../services/authService";
 import { feedbackService } from "../services/feedbackService";
 import Header from "../components/Header";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
+
+// List of allowed communities
+const COMMUNITY_OPTIONS = [
+  "TIET Patiala",
+  "Delhi University",
+  "ABC Office",
+  "XYZ Society",
+];
+
+// Helper function to normalize old string community field to an array
+const normalizeCommunity = (community) => {
+  if (Array.isArray(community)) {
+    return community;
+  }
+  if (typeof community === 'string' && community) {
+    return [community];
+  }
+  return [];
+};
 
 const Profile = () => {
   const navigate = useNavigate();
@@ -15,17 +34,30 @@ const Profile = () => {
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
-    community: "",
-    preferences: {
-      womenOnly: false,
-      communityOnly: false,
-      verifiedOnly: true,
-    },
+    community: [], // Changed to array
   });
   const [feedbacks, setFeedbacks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // State for in-place multi-select UI
+  const [isCommunityDropdownOpen, setIsCommunityDropdownOpen] = useState(false);
+  const communityRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (communityRef.current && !communityRef.current.contains(event.target)) {
+        setIsCommunityDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
 
   useEffect(() => {
     loadProfileData();
@@ -41,17 +73,12 @@ const Profile = () => {
         setFormData({
           name: user.name || "",
           phone: user.phone || "",
-          community: user.community || "",
-          preferences: user.preferences || {
-            womenOnly: false,
-            communityOnly: false,
-            verifiedOnly: true,
-          },
+          // FIX: Normalize stored community (from localStorage) to an array for the form state
+          community: normalizeCommunity(user.community), 
         });
       }
 
-      // Load feedbacks
-      // FIX: Use user.id instead of user._id
+      // Load feedbacks - uses user.id (fix from previous step)
       const feedbackData = await feedbackService.getFeedbackForUser(user.id);
       setFeedbacks(feedbackData.feedbacks || []);
     } catch (err) {
@@ -61,32 +88,51 @@ const Profile = () => {
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
+  const handleRemoveCommunity = (communityToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      community: prev.community.filter((c) => c !== communityToRemove),
+    }));
+    setError(null);
+  };
+  
+  const handleToggleCommunity = (communityToToggle) => {
+    setFormData((prev) => {
+      const isSelected = prev.community.includes(communityToToggle);
+      const newCommunity = isSelected
+        ? prev.community.filter((c) => c !== communityToToggle)
+        : [...prev.community, communityToToggle];
 
-    if (name.startsWith("preferences.")) {
-      const prefName = name.split(".")[1];
-      setFormData({
-        ...formData,
-        preferences: {
-          ...formData.preferences,
-          [prefName]: checked,
-        },
-      });
-    } else {
-      setFormData({
-        ...formData,
-        [name]: value,
-      });
+      return { ...prev, community: newCommunity };
+    });
+    setIsCommunityDropdownOpen(false);
+    setError(null);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name !== 'community') {
+        setFormData({
+            ...formData,
+            [name]: value,
+        });
     }
+    setError(null);
   };
 
   const handleSave = async () => {
     try {
       setSaving(true);
       setError(null);
-      // FIX: Use user.id instead of user._id
-      const response = await authService.updateProfile(user.id, formData);
+      
+      const dataToSubmit = {
+        ...formData,
+        community: formData.community || [],
+      };
+
+      // Uses user.id (fix from previous step)
+      const response = await authService.updateProfile(user.id, dataToSubmit);
       updateUser(response.user);
       setEditing(false);
       alert("Profile updated successfully!");
@@ -102,16 +148,23 @@ const Profile = () => {
     setFormData({
       name: user.name || "",
       phone: user.phone || "",
-      community: user.community || "",
-      preferences: user.preferences || {
-        womenOnly: false,
-        communityOnly: false,
-        verifiedOnly: true,
-      },
+      // FIX: Normalize stored community (from localStorage) to an array when canceling
+      community: normalizeCommunity(user.community), 
     });
     setEditing(false);
     setError(null);
   };
+  
+  // Helper function to safely render community for display
+  const renderCommunityDisplay = (community) => {
+    const normalized = normalizeCommunity(community);
+    return normalized.length > 0
+        ? normalized.join(', ')
+        : 'None specified';
+  };
+  
+  const availableCommunities = COMMUNITY_OPTIONS.filter(c => !formData.community.includes(c));
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -122,12 +175,14 @@ const Profile = () => {
       </div>
     );
   }
+  
   const avgRating =
     feedbacks.length > 0
       ? (
           feedbacks.reduce((sum, f) => sum + f.score, 0) / feedbacks.length
         ).toFixed(1)
       : "N/A";
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Header />
@@ -247,20 +302,74 @@ const Profile = () => {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-600"
                 />
               </div>
-
-              <div>
+              
+              <div className="relative" ref={communityRef}>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Community/Organization
                 </label>
-                <input
-                  type="text"
-                  name="community"
-                  value={formData.community}
-                  onChange={handleChange}
-                  disabled={!editing}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-600"
-                />
+                
+                {editing ? (
+                  <>
+                    {/* Multi-Select Input Field */}
+                    <div
+                      className={`flex items-center justify-between px-4 py-3 border ${
+                        isCommunityDropdownOpen ? 'border-indigo-500 ring-2 ring-indigo-500' : 'border-gray-300'
+                      } rounded-lg cursor-pointer transition`}
+                      onClick={() => setIsCommunityDropdownOpen(!isCommunityDropdownOpen)}
+                    >
+                      <span className={`text-gray-500 ${formData.community.length > 0 ? 'text-gray-900' : ''}`}>
+                        {formData.community.length > 0 ? 'Click to add/remove...' : 'Select communities...'}
+                      </span>
+                      <ChevronDown 
+                        size={16} 
+                        className={`text-gray-400 transition-transform ${isCommunityDropdownOpen ? 'rotate-180' : ''}`} 
+                      />
+                    </div>
+
+                    {/* Tags/Bubbles Display */}
+                    {formData.community.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {formData.community.map((tag) => (
+                          <div
+                            key={tag}
+                            className="flex items-center bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-medium"
+                          >
+                            <span>{tag}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCommunity(tag)}
+                              className="ml-2 text-blue-700 hover:text-blue-900 transition"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Dropdown Menu */}
+                    {isCommunityDropdownOpen && availableCommunities.length > 0 && (
+                      <div className="absolute top-full left-0 z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {availableCommunities.map((option) => (
+                          <div
+                            key={option}
+                            className="px-4 py-2 cursor-pointer hover:bg-indigo-50 flex justify-between items-center text-gray-900 text-sm"
+                            onClick={() => handleToggleCommunity(option)}
+                          >
+                            <span>{option}</span>
+                            <Users size={16} className="text-indigo-500"/>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600">
+                    {renderCommunityDisplay(user?.community)}
+                  </div>
+                )}
               </div>
+
             </div>
 
             <div>
@@ -274,75 +383,10 @@ const Profile = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 capitalize"
               />
             </div>
-
-            {/* Preferences */}
-            {editing && (
-              <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-                <p className="text-sm font-medium text-gray-700 mb-3">
-                  Ride Preferences
-                </p>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="preferences.womenOnly"
-                    checked={formData.preferences.womenOnly}
-                    onChange={handleChange}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    Prefer women-only rides
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="preferences.communityOnly"
-                    checked={formData.preferences.communityOnly}
-                    onChange={handleChange}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    Prefer same community rides
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    name="preferences.verifiedOnly"
-                    checked={formData.preferences.verifiedOnly}
-                    onChange={handleChange}
-                    className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    Only verified users
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {!editing && (
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-sm font-medium text-gray-700 mb-2">
-                  Current Preferences
-                </p>
-                <div className="space-y-1 text-sm text-gray-600">
-                  <p>
-                    • Women-only rides:{" "}
-                    {user?.preferences?.womenOnly ? "Yes" : "No"}
-                  </p>
-                  <p>
-                    • Community rides:{" "}
-                    {user?.preferences?.communityOnly ? "Yes" : "No"}
-                  </p>
-                  <p>
-                    • Verified users only:{" "}
-                    {user?.preferences?.verifiedOnly ? "Yes" : "No"}
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
+          {/* REMOVE: Removed Preferences Section */}
+          
           {/* Recent Reviews */}
           {feedbacks.length > 0 && (
             <div className="mt-8 pt-8 border-t border-gray-200">

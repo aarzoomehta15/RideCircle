@@ -45,7 +45,7 @@ router.post('/', protect, [
     const pool = await Pool.create(poolData);
 
     // Populate creator info
-    await pool.populate('createdBy', 'name email phone trustScore');
+    await pool.populate('createdBy', 'name email phone trustScore community');
     await pool.populate('participants.user', 'name email phone trustScore');
 
     res.status(201).json({
@@ -65,7 +65,8 @@ router.post('/', protect, [
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    const { status = 'upcoming', type, date, community } = req.query;
+    // CHANGE: Removed 'community' from destructuring, filtering is now client-side logic
+    const { status = 'upcoming', type, date } = req.query;
 
     let filter = { status };
 
@@ -82,14 +83,8 @@ router.get('/', protect, async (req, res) => {
       filter.date = { $gte: startDate, $lt: endDate };
     }
 
-    // Add community filter
-    if (community) {
-      const usersInCommunity = await User.find({
-        community: { $regex: community, $options: 'i' }
-      }).select('_id');
-      filter.createdBy = { $in: usersInCommunity.map(u => u._id) };
-    }
-
+    // CHANGE: Removed server-side community filtering entirely to rely on robust client-side visibility logic.
+    
     const pools = await Pool.find(filter)
       .populate('createdBy', 'name email phone trustScore community')
       .populate('participants.user', 'name email phone trustScore')
@@ -204,9 +199,10 @@ router.post('/:id/join', protect, async (req, res) => {
       });
     }
 
+    const user = await User.findById(req.user._id);
+
     // Check pool type restrictions
     if (pool.type === 'women-only') {
-      const user = await User.findById(req.user._id);
       if (user.gender !== 'female') {
         return res.status(403).json({
           message: 'This pool is restricted to women only'
@@ -216,8 +212,14 @@ router.post('/:id/join', protect, async (req, res) => {
 
     if (pool.type === 'community') {
       const creator = await User.findById(pool.createdBy);
-      const user = await User.findById(req.user._id);
-      if (creator.community !== user.community) {
+      
+      // CORE LOGIC: Check for intersection between creator's communities and user's communities.
+      const creatorCommunities = creator.community || [];
+      const userCommunities = user.community || [];
+      
+      const isCommunityMember = creatorCommunities.some(c => userCommunities.includes(c));
+
+      if (!isCommunityMember) {
         return res.status(403).json({
           message: 'This pool is restricted to community members only'
         });
