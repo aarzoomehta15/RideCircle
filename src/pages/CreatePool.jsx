@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { poolService } from "../services/poolService";
 import Header from "../components/Header";
 import MapPicker from "../components/MapPicker";
-import { getMinDate } from "../utils/dateUtils";
+import { getMinDate, getTodayDate, getCurrentTimeHHMM } from "../utils/dateUtils"; // NEW IMPORT
 
 const CreatePool = () => {
   const navigate = useNavigate();
@@ -36,7 +36,7 @@ const CreatePool = () => {
     destination: "",
     sourceCoords: null,
     destCoords: null,
-    date: "",
+    date: getTodayDate(), // Set default date to today
     time: "",
     maxSeats: 4,
     type: defaultPoolType, // CHANGE: Use the first available type as default
@@ -98,6 +98,22 @@ const CreatePool = () => {
       return;
     }
     
+    // NEW TIME VALIDATION: Prevent setting a time that is in the past for today
+    const now = new Date();
+    const today = getTodayDate();
+    
+    if (formData.date === today) {
+        const [hour, minute] = formData.time.split(':').map(Number);
+        const selectedDateTime = new Date(formData.date);
+        selectedDateTime.setHours(hour, minute, 0, 0);
+
+        // Allow some buffer (e.g., 5 minutes)
+        if (selectedDateTime.getTime() < now.getTime() - 5 * 60 * 1000) {
+            setError("Cannot create a pool for a time that has already passed today.");
+            return;
+        }
+    }
+
     // FRONT-END VALIDATION: Re-check permissions before submitting (backend will also enforce)
     if (formData.type === 'women-only' && isMale) {
         setError("You cannot create a 'Women Only' pool as a male user.");
@@ -120,6 +136,7 @@ const CreatePool = () => {
       };
 
       await poolService.createPool(poolData);
+      alert("Pool created successfully!");
       navigate("/dashboard");
     } catch (err) {
       // API error handling from backend checks
@@ -244,6 +261,8 @@ const CreatePool = () => {
                   name="time"
                   value={formData.time}
                   onChange={handleChange}
+                  // NEW: Set min time to current time if date is today
+                  min={formData.date === getTodayDate() ? getCurrentTimeHHMM() : "00:00"}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   required
                 />

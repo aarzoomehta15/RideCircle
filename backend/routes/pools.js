@@ -6,6 +6,50 @@ const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Helper to check if time has passed today (for input validation)
+const isTimeInPast = (date, time) => {
+  const today = new Date().toISOString().split('T')[0];
+  if (date !== today) return false;
+
+  const [hours, minutes] = time.split(':').map(Number);
+  const now = new Date();
+  
+  // Create a Date object for the selected time today. Allow a 5 minute buffer.
+  const selectedTime = new Date();
+  selectedTime.setHours(hours, minutes, 0, 0);
+
+  return selectedTime.getTime() < now.getTime() - 5 * 60 * 1000;
+};
+
+// Helper to calculate late cancellation penalty (within 60 minutes)
+const isLateCancellation = (poolDate, poolTime) => {
+  const [hours, minutes] = poolTime.split(':').map(Number);
+  const poolDateTime = new Date(poolDate);
+  poolDateTime.setHours(hours, minutes, 0, 0);
+
+  const now = new Date();
+  const diffInMinutes = (poolDateTime.getTime() - now.getTime()) / (1000 * 60);
+
+  // Late cancellation if ride is in the future but less than 60 minutes away.
+  return diffInMinutes > 0 && diffInMinutes < 60;
+};
+
+// Helper to update user trust score - deducts 5 points
+async function deductTrustScore(userId) {
+    try {
+        const user = await User.findById(userId);
+        if (user) {
+            // Deduct 5 points, but ensure score doesn't go below 0
+            const newScore = Math.max(0, user.trustScore - 5);
+            await User.findByIdAndUpdate(userId, { trustScore: newScore });
+            return true;
+        }
+    } catch (error) {
+        console.error('Error deducting trust score:', error);
+    }
+    return false;
+}
+
 // @route   POST /api/pools
 // @desc    Create a new pool
 // @access  Private
@@ -32,8 +76,15 @@ router.post('/', protect, [
       });
     }
 
-    const { type } = req.body;
+    const { type, date, time } = req.body;
     const creator = await User.findById(req.user._id);
+
+    // NEW VALIDATION: Prevent setting a time that is in the past for today
+    if (isTimeInPast(date, time)) {
+        return res.status(400).json({
+            message: 'Cannot create a pool for a time that has already passed today.'
+        });
+    }
 
     // SECURITY LOGIC: Restrict pool creation based on user attributes
     if (type === 'women-only' && creator.gender === 'male') {
@@ -151,6 +202,34 @@ router.get('/my-pools', protect, async (req, res) => {
     });
   }
 });
+
+// NEW ROUTE: Automated cleanup endpoint
+// @route   GET /api/pools/cleanup-old-pools
+// @desc    Cleans up pools older than 14 days
+// @access  Private (Accessed on Dashboard load)
+router.get('/cleanup-old-pools', protect, async (req, res) => {
+    try {
+        // Calculate the date 14 days ago
+        const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+        // Delete pools that are 'completed' and were last updated over 14 days ago.
+        const result = await Pool.deleteMany({
+            status: 'completed',
+            updatedAt: { $lt: fourteenDaysAgo }
+        });
+
+        res.json({
+            message: `Cleanup successful. Deleted ${result.deletedCount} old completed pools.`,
+            deletedCount: result.deletedCount
+        });
+    } catch (error) {
+        console.error('Cleanup old pools error:', error);
+        res.status(500).json({
+            message: 'Server error during pool cleanup'
+        });
+    }
+});
+
 
 // @route   GET /api/pools/:id
 // @desc    Get pool by ID
@@ -274,7 +353,7 @@ router.post('/:id/join', protect, async (req, res) => {
 });
 
 // @route   POST /api/pools/:id/leave
-// @desc    Leave a pool
+// @desc    Leave a pool (Participant Action)
 // @access  Private
 router.post('/:id/leave', protect, async (req, res) => {
   try {
@@ -286,10 +365,17 @@ router.post('/:id/leave', protect, async (req, res) => {
       });
     }
 
-    // Check if user is the creator
+    // Check if pool is upcoming - cannot leave an ongoing/completed ride
+    if (pool.status !== 'upcoming') {
+        return res.status(400).json({
+            message: 'Cannot leave a pool that is not upcoming.'
+        });
+    }
+
+    // Check if user is the creator (Creator must use 'Cancel Pool' via status update)
     if (pool.createdBy.toString() === req.user._id.toString()) {
       return res.status(400).json({
-        message: 'Pool creator cannot leave the pool. Delete the pool instead.'
+        message: 'Pool creator cannot leave the pool. Use the "Cancel Pool" option instead.'
       });
     }
 
@@ -300,17 +386,34 @@ router.post('/:id/leave', protect, async (req, res) => {
 
     if (participantIndex === -1 || pool.participants[participantIndex].status !== 'joined') {
       return res.status(400).json({
-        message: 'You are not a participant in this pool'
+        message: 'You are not an active participant in this pool'
       });
     }
+    
+    // NEW LOGIC: Check for late cancellation penalty
+    const isLate = isLateCancellation(pool.date, pool.time);
+    let penaltyApplied = false;
 
-    // Update participant status
+    if (isLate) {
+        const deductionSuccess = await deductTrustScore(req.user._id);
+        if (deductionSuccess) {
+            penaltyApplied = true;
+        }
+    }
+
+    // Update participant status to 'left'
     pool.participants[participantIndex].status = 'left';
 
     await pool.save();
+    
+    let message = 'Successfully left the pool.';
+    if (penaltyApplied) {
+        message += ' A 5-point Trust Score penalty was applied for late cancellation.';
+    }
 
     res.json({
-      message: 'Successfully left the pool'
+      message,
+      penaltyApplied
     });
   } catch (error) {
     console.error('Leave pool error:', error);
@@ -321,7 +424,7 @@ router.post('/:id/leave', protect, async (req, res) => {
 });
 
 // @route   PATCH /api/pools/:id/status
-// @desc    Update pool status
+// @desc    Update pool status (Used by creator for completion and cancellation)
 // @access  Private
 router.patch('/:id/status', protect, [
   body('status').isIn(['upcoming', 'ongoing', 'completed', 'cancelled']).withMessage('Invalid status')
@@ -337,6 +440,7 @@ router.patch('/:id/status', protect, [
     }
 
     const pool = await Pool.findById(req.params.id);
+    const newStatus = req.body.status;
 
     if (!pool) {
       return res.status(404).json({
@@ -351,7 +455,77 @@ router.patch('/:id/status', protect, [
       });
     }
 
-    pool.status = req.body.status;
+    // LOGIC FOR CANCELLATION (creator)
+    if (newStatus === 'cancelled') {
+        const activeParticipants = pool.participants.filter(p => p.status === 'joined').length;
+
+        // If there is more than just the creator (activeParticipants > 1), apply penalty.
+        if (activeParticipants > 1) {
+            // Apply penalty for cancelling a ride with active co-riders
+            const deductionSuccess = await deductTrustScore(req.user._id);
+            if (!deductionSuccess) {
+                console.warn(`Could not deduct trust score for user ${req.user._id} upon cancellation.`);
+            }
+            
+            // Mark all active participants as 'removed' to clearly indicate they were dropped
+            pool.participants.forEach(p => {
+                if (p.status === 'joined' && p.user.toString() !== req.user._id.toString()) {
+                    p.status = 'removed';
+                }
+            });
+            
+            // Allow cancellation, but warn of penalty
+            pool.status = newStatus;
+            pool.updatedAt = new Date(); // Update timestamp for potential cleanup
+            await pool.save();
+
+            return res.json({
+                message: 'Pool cancelled. A 5-point Trust Score penalty was applied for cancelling a ride with other participants.',
+                penaltyApplied: true,
+                pool
+            });
+        }
+        
+        // If only the creator is in the pool, no penalty, just a normal transition to cancelled status
+        pool.status = newStatus;
+        pool.updatedAt = new Date(); // Update timestamp for potential cleanup
+        await pool.save();
+
+        return res.json({
+            message: 'Pool cancelled successfully.',
+            penaltyApplied: false,
+            pool
+        });
+    }
+    
+    // LOGIC FOR COMPLETION (creator)
+    if (newStatus === 'completed') {
+        // Ensure the ride time has actually passed before marking as completed
+        const [hours, minutes] = pool.time.split(':').map(Number);
+        const poolDateTime = new Date(pool.date);
+        poolDateTime.setHours(hours, minutes, 0, 0);
+
+        if (poolDateTime.getTime() > Date.now()) {
+            return res.status(400).json({
+                message: 'Cannot mark a pool as completed before its scheduled time.'
+            });
+        }
+        
+        // Normal transition to completed
+        pool.status = newStatus;
+        // Also update updatedAt to use as a cleanup timestamp
+        pool.updatedAt = new Date(); 
+        await pool.save();
+        
+        return res.json({
+            message: 'Pool status updated to completed.',
+            pool
+        });
+    }
+    
+    // Default status update for other cases (e.g., ongoing, upcoming if somehow triggered)
+    pool.status = newStatus;
+    pool.updatedAt = new Date(); 
     await pool.save();
 
     res.json({
@@ -367,7 +541,7 @@ router.patch('/:id/status', protect, [
 });
 
 // @route   DELETE /api/pools/:id
-// @desc    Delete a pool
+// @desc    Delete a pool (only possible if only the creator is the sole participant)
 // @access  Private
 router.delete('/:id', protect, async (req, res) => {
   try {
@@ -386,11 +560,11 @@ router.delete('/:id', protect, async (req, res) => {
       });
     }
 
-    // Check if pool has other participants
+    // Check if pool has other participants (only allow hard delete if ONLY the creator is active)
     const activeParticipants = pool.participants.filter(p => p.status === 'joined').length;
     if (activeParticipants > 1) {
       return res.status(400).json({
-        message: 'Cannot delete pool with active participants. Cancel the pool instead.'
+        message: 'Cannot delete pool with active participants. Please cancel the pool using the status update option instead.'
       });
     }
 

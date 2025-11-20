@@ -63,6 +63,18 @@ export const poolService = {
       throw error.response?.data?.message || "Failed to update pool status";
     }
   },
+  
+  // NEW: Function to trigger the automated cleanup
+  cleanupOldPools: async () => {
+    try {
+      const response = await api.get("/pools/cleanup-old-pools");
+      return response.data;
+    } catch (error) {
+      // Don't throw for minor cleanup errors, just log them
+      console.warn("Cleanup failed:", error.response?.data?.message || "Server error during cleanup");
+      return { message: "Cleanup attempt failed or was not necessary." };
+    }
+  },
 
   deletePool: async (poolId) => {
     try {

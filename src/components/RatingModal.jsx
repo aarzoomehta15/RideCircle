@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; 
 import { X, AlertTriangle, Star } from "lucide-react";
 
 const RatingModal = ({
@@ -8,22 +8,77 @@ const RatingModal = ({
   onSubmit,
   onClose,
 }) => {
+  // Filter for active, non-current users. Access nested 'user' object for data.
+  const coRiders = participants.filter((p) => p.user._id !== currentUserId && p.status === 'joined');
+  
+  const [ratedUserId, setRatedUserId] = useState("");
+
   const [ratingData, setRatingData] = useState({
-    rateeId: "",
+    ratedUserId: "", 
     score: 5,
     comment: "",
     safetyFlag: false,
   });
+  
+  // Set default rated user on mount
+  useEffect(() => {
+    if (coRiders.length > 0 && !ratedUserId) {
+      setRatedUserId(coRiders[0].user._id);
+      setRatingData(prev => ({ 
+          ...prev, 
+          ratedUserId: coRiders[0].user._id 
+      }));
+    }
+  }, [coRiders.length]);
+
 
   const handleSubmit = () => {
-    if (!ratingData.rateeId) {
+    if (!ratingData.ratedUserId) {
       alert("Please select a rider to rate");
       return;
     }
+    
+    // The onSubmit function in MyRides.jsx expects the combined payload
     onSubmit(ratingData);
   };
+  
+  const handleSelectChange = (e) => {
+    setRatedUserId(e.target.value);
+    setRatingData({ 
+        // Reset rating for new user
+        ratedUserId: e.target.value,
+        score: 5,
+        comment: "",
+        safetyFlag: false,
+    });
+  }
 
-  const coRiders = participants.filter((p) => p._id !== currentUserId);
+  // Handle case where there are no co-riders to rate
+  if (coRiders.length === 0) {
+      return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full">
+                  <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-bold text-gray-900">No Co-riders to Rate</h3>
+                      <button
+                          onClick={onClose}
+                          className="text-gray-400 hover:text-gray-600 transition"
+                      >
+                          <X size={24} />
+                      </button>
+                  </div>
+                  <p className="text-gray-600">You were the only active participant left on this ride, or all co-riders have left.</p>
+                  <button
+                      onClick={onClose}
+                      className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 mt-4 transition"
+                  >
+                      Close
+                  </button>
+              </div>
+          </div>
+      );
+  }
+
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -46,16 +101,15 @@ const RatingModal = ({
               Select Rider
             </label>
             <select
-              value={ratingData.rateeId}
-              onChange={(e) =>
-                setRatingData({ ...ratingData, rateeId: e.target.value })
-              }
+              value={ratedUserId}
+              onChange={handleSelectChange}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
               <option value="">Choose a rider...</option>
-              {coRiders.map((rider) => (
-                <option key={rider._id} value={rider._id}>
-                  {rider.name}
+              {coRiders.map((p) => (
+                // Use p.user._id and p.user.name from the populated object
+                <option key={p.user._id} value={p.user._id}>
+                  {p.user.name}
                 </option>
               ))}
             </select>
@@ -131,7 +185,7 @@ const RatingModal = ({
 
           <button
             onClick={handleSubmit}
-            disabled={!ratingData.rateeId}
+            disabled={!ratingData.ratedUserId}
             className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
           >
             Submit Rating

@@ -11,7 +11,9 @@ import {
   CheckCircle,
   Phone,
   Feather, 
-  ChevronDown // Added ChevronDown for better expand/collapse icon
+  ChevronDown,
+  XCircle, // Added XCircle for cancellation
+  CheckCheck // Added CheckCheck for completion
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { poolService } from "../services/poolService";
@@ -20,6 +22,7 @@ import Header from "../components/Header";
 import RatingModal from "../components/RatingModal";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
+import { hasRideTimePassed, isLateCancellation } from "../utils/dateUtils"; // NEW IMPORT
 
 const MyRides = () => {
   const navigate = useNavigate();
@@ -56,16 +59,71 @@ const MyRides = () => {
 
   const handleRateSubmit = async (ratingData) => {
     try {
-      await feedbackService.submitFeedback({
-        rideId: selectedRide._id,
-        ...ratingData,
-      });
+      // NOTE: ratingData is now the full payload including rideId and ratedUserId
+      await feedbackService.submitFeedback(ratingData);
       alert("Rating submitted successfully!");
       setSelectedRide(null);
       loadMyRides(); // Reload to update rated status
     } catch (err) {
-      alert(err.message || "Failed to submit rating");
+      alert(err || "Failed to submit rating");
     }
+  };
+  
+  // NEW: Handle participant leaving a pool
+  const handleLeavePool = async (poolId, date, time) => {
+      
+      try {
+          const isLate = isLateCancellation(date, time);
+          
+          if (isLate) {
+              const confirmLate = window.confirm(
+                  "This cancellation is less than 1 hour before departure. You will incur a 5-point Trust Score penalty. Continue?"
+              );
+              if (!confirmLate) {
+                  return;
+              }
+          } else {
+              if (!window.confirm("Are you sure you want to leave this pool? This action cannot be undone.")) {
+                  return;
+              }
+          }
+          
+          const response = await poolService.leavePool(poolId);
+          alert(response.message);
+          loadMyRides();
+      } catch (err) {
+          alert(err || "Failed to leave pool");
+      }
+  };
+  
+  // NEW: Handle creator updating pool status (Mark as Completed / Cancel Pool)
+  const handleUpdatePoolStatus = async (poolId, status, activeParticipants) => {
+      let message = "";
+      if (status === 'completed') {
+          message = "Are you sure you want to mark this ride as completed? You will then be able to rate your co-riders.";
+      } else if (status === 'cancelled') {
+          if (activeParticipants > 1) {
+              message = `WARNING: This will cancel the ride, and since ${activeParticipants - 1} other participant(s) have joined, you will incur a 5-point Trust Score penalty. Are you sure?`;
+          } else {
+              message = "Are you sure you want to cancel this pool? This action cannot be undone.";
+          }
+      }
+      
+      if (!window.confirm(message)) {
+          return;
+      }
+
+      try {
+          const response = await poolService.updatePoolStatus(poolId, status);
+          if (response.penaltyApplied) {
+              alert(response.message);
+          } else {
+              alert(`Ride successfully marked as ${status}.`);
+          }
+          loadMyRides();
+      } catch (err) {
+          alert(err || `Failed to update pool status to ${status}.`);
+      }
   };
 
   // Participant Card Component (defined as inner component to access state)
@@ -127,9 +185,10 @@ const MyRides = () => {
       </div>
     );
   };
-
-  const upcomingRides = pools.filter((p) => p.status === "upcoming");
+  
+  const upcomingRides = pools.filter((p) => p.status === "upcoming" || p.status === "ongoing");
   const completedRides = pools.filter((p) => p.status === "completed");
+  const cancelledRides = pools.filter((p) => p.status === "cancelled"); // New section
 
   if (loading) {
     return (
@@ -163,7 +222,7 @@ const MyRides = () => {
           </div>
         )}
 
-        {/* Upcoming Rides */}
+        {/* Upcoming & Ongoing Rides */}
         <div className="mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Upcoming Rides ({upcomingRides.length})
@@ -181,65 +240,109 @@ const MyRides = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {upcomingRides.map((pool) => (
-                <div
-                  key={pool._id}
-                  className="bg-white p-6 rounded-xl shadow-md"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <MapPin size={16} className="text-indigo-600" />
-                        <span className="font-semibold text-gray-900">
-                          {pool.source}
+              {upcomingRides.map((pool) => {
+                const isCreator = pool.createdBy._id === user.id;
+                const isActiveParticipant = pool.participants.some(
+                    p => p.user._id === user.id && p.status === 'joined'
+                );
+                const activeParticipantsCount = pool.participants?.filter(p => p.status === 'joined').length || 0;
+                
+                const timePassed = hasRideTimePassed(pool.date, pool.time);
+                
+                return (
+                  <div
+                    key={pool._id}
+                    className="bg-white p-6 rounded-xl shadow-md"
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <MapPin size={16} className="text-indigo-600" />
+                          <span className="font-semibold text-gray-900">
+                            {pool.source}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <MapPin size={16} className="text-green-600" />
+                          <span className="font-semibold text-gray-900">
+                            {pool.destination}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span className="flex items-center gap-1">
+                            <Calendar size={14} />
+                            {new Date(pool.date).toLocaleDateString()}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock size={14} />
+                            {pool.time}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Users size={14} />
+                            {activeParticipantsCount} riders
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* NEW BUTTONS/ACTIONS */}
+                      <div className="flex flex-col gap-2">
+                        {/* Creator: Mark as Completed */}
+                        {timePassed && isCreator && pool.status === 'upcoming' && (
+                            <button
+                                onClick={() => handleUpdatePoolStatus(pool._id, 'completed')}
+                                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2 text-sm"
+                            >
+                                <CheckCheck size={16} /> Mark as Completed
+                            </button>
+                        )}
+                        
+                        {/* Creator: Cancel Pool */}
+                        {isCreator && !timePassed && (
+                            <button
+                                onClick={() => handleUpdatePoolStatus(pool._id, 'cancelled', activeParticipantsCount)}
+                                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition flex items-center gap-2 text-sm"
+                            >
+                                <XCircle size={16} /> Cancel Pool
+                            </button>
+                        )}
+
+                        {/* Participant: Leave Pool */}
+                        {!isCreator && isActiveParticipant && !timePassed && (
+                            <button
+                                onClick={() => handleLeavePool(pool._id, pool.date, pool.time)}
+                                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition flex items-center gap-2 text-sm"
+                            >
+                                <XCircle size={16} /> Leave Pool
+                            </button>
+                        )}
+                        
+                        <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium text-right">
+                          {pool.status.charAt(0).toUpperCase() + pool.status.slice(1)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <MapPin size={16} className="text-green-600" />
-                        <span className="font-semibold text-gray-900">
-                          {pool.destination}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
-                        <span className="flex items-center gap-1">
-                          <Calendar size={14} />
-                          {new Date(pool.date).toLocaleDateString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock size={14} />
-                          {pool.time}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Users size={14} />
-                          {pool.participants?.filter(p => p.status === 'joined').length || 0} riders
-                        </span>
-                      </div>
+                      
                     </div>
 
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                      Upcoming
-                    </span>
-                  </div>
-
-                  <div className="pt-4 border-t border-gray-100">
-                    <p className="text-sm font-medium text-gray-700 mb-3">
-                      Co-riders ({pool.participants?.filter(p => p.status === 'joined').length}):
-                    </p>
-                    {/* FIX 2: LAYOUT - Use flex-wrap and gap-4 to create the two-column grid */}
-                    <div className="flex flex-wrap gap-4"> 
-                      {pool.participants?.map((participant) => (
-                          <ParticipantCard key={participant._id} participant={participant} />
-                      ))}
+                    <div className="pt-4 border-t border-gray-100">
+                      <p className="text-sm font-medium text-gray-700 mb-3">
+                        Co-riders ({activeParticipantsCount}):
+                      </p>
+                      {/* FIX 2: LAYOUT - Use flex-wrap and gap-4 to create the two-column grid */}
+                      <div className="flex flex-wrap gap-4"> 
+                        {pool.participants?.map((participant) => (
+                            <ParticipantCard key={participant._id} participant={participant} />
+                        ))}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* Completed Rides */}
-        <div>
+        <div className="mb-8">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">
             Completed Rides ({completedRides.length})
           </h3>
@@ -250,6 +353,7 @@ const MyRides = () => {
           ) : (
             <div className="space-y-4">
               {completedRides.map((pool) => {
+                // Check if the current user has rated *any* co-rider for this pool
                 const hasRated = feedbacks.some((f) => f.rideId === pool._id);
                 return (
                   <div
@@ -300,12 +404,64 @@ const MyRides = () => {
             </div>
           )}
         </div>
+        
+        {/* Cancelled Rides (New Section) */}
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            Cancelled Rides ({cancelledRides.length})
+          </h3>
+          {cancelledRides.length === 0 ? (
+            <div className="bg-white p-8 rounded-xl shadow-md text-center text-gray-500">
+              No cancelled rides
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {cancelledRides.map((pool) => (
+                  <div
+                    key={pool._id}
+                    className="bg-white p-6 rounded-xl shadow-md opacity-70 border border-red-300"
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <MapPin size={16} className="text-indigo-600" />
+                          <span className="font-semibold text-gray-900">
+                            {pool.source}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <MapPin size={16} className="text-green-600" />
+                          <span className="font-semibold text-gray-900">
+                            {pool.destination}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span>
+                            {new Date(pool.date).toLocaleDateString()}
+                          </span>
+                          <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
+                            Cancelled
+                          </span>
+                          <span className="text-xs">
+                            {pool.createdBy._id === user.id ? "(Created by you)" : `(Cancelled by ${pool.createdBy.name})`}
+                          </span>
+                        </div>
+                      </div>
+                      <XCircle size={32} className="text-red-500"/>
+                    </div>
+                  </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
       </div>
 
       {selectedRide && (
         <RatingModal
           pool={selectedRide}
-          participants={selectedRide.participants || []}
+          // Pass the complete participant objects which contain nested user data
+          participants={selectedRide.participants || []} 
           currentUserId={user.id} 
           onSubmit={handleRateSubmit}
           onClose={() => setSelectedRide(null)}

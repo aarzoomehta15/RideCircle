@@ -29,6 +29,39 @@ const Dashboard = () => {
   useEffect(() => {
     loadDashboardData();
   }, []);
+  
+  // NEW: Run cleanup after initial data load
+  useEffect(() => {
+    if (!loading && !error) {
+        runCleanup();
+    }
+  }, [loading, error]);
+  
+  const loadPoolsDataOnly = async () => {
+    try {
+        const poolsData = await poolService.getMyPools();
+        setPools(poolsData.pools || []);
+    } catch (err) {
+        // Only update the error state if it was previously null, to avoid infinite loops
+        if (!error) {
+            setError(err.message || "Failed to load pools data for cleanup check");
+        }
+    }
+  };
+  
+  // NEW: Function to run the cleanup endpoint
+  const runCleanup = async () => {
+      try {
+          const result = await poolService.cleanupOldPools();
+          if (result.deletedCount > 0) {
+              console.log(result.message);
+              // Reload pools to reflect changes after cleanup
+              loadPoolsDataOnly(); 
+          }
+      } catch (e) {
+          console.warn("Cleanup failed but continuing dashboard load.", e);
+      }
+  }
 
   const loadDashboardData = async () => {
     try {
@@ -73,7 +106,7 @@ const Dashboard = () => {
   }
 
   const upcomingPools = pools
-    .filter((p) => p.status === "upcoming")
+    .filter((p) => p.status === "upcoming" || p.status === "ongoing")
     .slice(0, 3);
   const completedCount = pools.filter((p) => p.status === "completed").length;
   const avgRating =
@@ -244,7 +277,7 @@ const Dashboard = () => {
                         </span>
                         <span className="flex items-center gap-1">
                           <Users size={14} />
-                          {pool.participants?.length || 0}/{pool.maxSeats}
+                          {pool.participants?.filter(p => p.status === 'joined').length || 0}/{pool.maxSeats}
                         </span>
                       </div>
                     </div>
