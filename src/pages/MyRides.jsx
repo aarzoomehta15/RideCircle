@@ -9,6 +9,9 @@ import {
   User,
   Shield,
   CheckCircle,
+  Phone,
+  Feather, 
+  ChevronDown // Added ChevronDown for better expand/collapse icon
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { poolService } from "../services/poolService";
@@ -26,6 +29,9 @@ const MyRides = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedRide, setSelectedRide] = useState(null);
+  
+  // FIX 1: STATE LOGIC - Tracks the ID of the ONE currently expanded participant
+  const [expandedParticipantId, setExpandedParticipantId] = useState(null);
 
   useEffect(() => {
     loadMyRides();
@@ -60,6 +66,66 @@ const MyRides = () => {
     } catch (err) {
       alert(err.message || "Failed to submit rating");
     }
+  };
+
+  // Participant Card Component (defined as inner component to access state)
+  const ParticipantCard = ({ participant }) => {
+    // FIX: Accessing data from the correct nested structure (participant.user)
+    const { user: coRider, status } = participant;
+    
+    // Ensure the participant data is populated and they haven't left
+    if (!coRider || status !== 'joined') return null;
+
+    // FIX 1: STATE LOGIC - Only expand if this specific participant ID matches the state
+    const isExpanded = expandedParticipantId === coRider._id;
+    const isCreator = user.id === coRider._id;
+
+    const toggleExpand = (e) => {
+      e.stopPropagation(); // Prevents propagation
+      setExpandedParticipantId(isExpanded ? null : coRider._id);
+    };
+    
+    // FIX 2: LAYOUT - Apply width calculation for two-column layout
+    return (
+      <div 
+        key={coRider._id}
+        onClick={toggleExpand}
+        className={`w-full md:w-[calc(50%-0.5rem)] flex-shrink-0 bg-gray-50 p-3 rounded-lg cursor-pointer transition-all border ${isExpanded ? 'border-indigo-400 shadow-md' : 'border-gray-200 hover:border-indigo-300'}`}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <User size={18} className={`text-gray-600 ${isCreator ? 'text-indigo-600' : ''}`} />
+            <span className="font-medium text-gray-900">
+              {coRider.name} {isCreator && "(You)"}
+            </span>
+          </div>
+
+          {/* Initial Display: Trust Score */}
+          <div className="flex items-center gap-1 text-sm">
+            <Shield size={14} className="text-green-600" />
+            <span className="text-xs font-semibold text-gray-600">
+              {coRider.trustScore || 50}
+            </span>
+            <ChevronDown size={14} className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </div>
+        </div>
+
+        {/* EXPANDED DETAILS (Phone & Gender) */}
+        {isExpanded && (
+          <div className="mt-3 pt-3 border-t border-gray-200 space-y-2 text-sm">
+            <div className="flex items-center gap-2 text-gray-700">
+              <Phone size={14} className="text-indigo-500" />
+              <span>Phone: {coRider.phone}</span>
+            </div>
+            {/* FIX 3: GENDER VISIBILITY - Ensure 'capitalize' class is applied for clean display */}
+            <div className="flex items-center gap-2 text-gray-700 capitalize"> 
+              <Feather size={14} className="text-indigo-500" />
+              <span>Gender: {coRider.gender}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const upcomingRides = pools.filter((p) => p.status === "upcoming");
@@ -145,7 +211,7 @@ const MyRides = () => {
                         </span>
                         <span className="flex items-center gap-1">
                           <Users size={14} />
-                          {pool.participants?.length || 0} riders
+                          {pool.participants?.filter(p => p.status === 'joined').length || 0} riders
                         </span>
                       </div>
                     </div>
@@ -156,26 +222,13 @@ const MyRides = () => {
                   </div>
 
                   <div className="pt-4 border-t border-gray-100">
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Co-riders:
+                    <p className="text-sm font-medium text-gray-700 mb-3">
+                      Co-riders ({pool.participants?.filter(p => p.status === 'joined').length}):
                     </p>
-                    <div className="flex flex-wrap gap-2">
+                    {/* FIX 2: LAYOUT - Use flex-wrap and gap-4 to create the two-column grid */}
+                    <div className="flex flex-wrap gap-4"> 
                       {pool.participants?.map((participant) => (
-                        <div
-                          key={participant._id}
-                          className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg"
-                        >
-                          <User size={16} className="text-gray-600" />
-                          <span className="text-sm text-gray-900">
-                            {participant.name}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <Shield size={12} className="text-green-600" />
-                            <span className="text-xs text-gray-600">
-                              {participant.trustScore}
-                            </span>
-                          </div>
-                        </div>
+                          <ParticipantCard key={participant._id} participant={participant} />
                       ))}
                     </div>
                   </div>
@@ -253,7 +306,7 @@ const MyRides = () => {
         <RatingModal
           pool={selectedRide}
           participants={selectedRide.participants || []}
-          currentUserId={user._id}
+          currentUserId={user.id} 
           onSubmit={handleRateSubmit}
           onClose={() => setSelectedRide(null)}
         />

@@ -35,7 +35,7 @@ router.post('/', protect, [
     const { type } = req.body;
     const creator = await User.findById(req.user._id);
 
-    // NEW SECURITY LOGIC: Restrict pool creation based on user attributes
+    // SECURITY LOGIC: Restrict pool creation based on user attributes
     if (type === 'women-only' && creator.gender === 'male') {
         return res.status(403).json({
             message: 'Male users cannot create "Women Only" pools.'
@@ -60,9 +60,9 @@ router.post('/', protect, [
 
     const pool = await Pool.create(poolData);
 
-    // Populate creator info
-    await pool.populate('createdBy', 'name email phone trustScore community');
-    await pool.populate('participants.user', 'name email phone trustScore');
+    // FIX: Include 'gender' in population
+    await pool.populate('createdBy', 'name email phone trustScore community gender');
+    await pool.populate('participants.user', 'name email phone trustScore gender');
 
     res.status(201).json({
       message: 'Pool created successfully',
@@ -81,7 +81,6 @@ router.post('/', protect, [
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
-    // CHANGE: Removed 'community' from destructuring, filtering is now client-side logic
     const { status = 'upcoming', type, date } = req.query;
 
     let filter = { status };
@@ -98,12 +97,11 @@ router.get('/', protect, async (req, res) => {
       endDate.setDate(endDate.getDate() + 1);
       filter.date = { $gte: startDate, $lt: endDate };
     }
-
-    // CHANGE: Removed server-side community filtering entirely to rely on robust client-side visibility logic.
     
     const pools = await Pool.find(filter)
-      .populate('createdBy', 'name email phone trustScore community')
-      .populate('participants.user', 'name email phone trustScore')
+      // FIX: Include 'gender' in population
+      .populate('createdBy', 'name email phone trustScore community gender')
+      .populate('participants.user', 'name email phone trustScore gender')
       .sort({ date: 1, time: 1 });
 
     res.json({
@@ -127,8 +125,9 @@ router.get('/my-pools', protect, async (req, res) => {
 
     // Find pools created by user
     const createdPools = await Pool.find({ createdBy: userId })
-      .populate('createdBy', 'name email phone trustScore')
-      .populate('participants.user', 'name email phone trustScore')
+      // FIX: Include 'gender' in population
+      .populate('createdBy', 'name email phone trustScore gender')
+      .populate('participants.user', 'name email phone trustScore gender')
       .sort({ date: -1 });
 
     // Find pools where user is a participant
@@ -137,8 +136,9 @@ router.get('/my-pools', protect, async (req, res) => {
       'participants.status': 'joined',
       createdBy: { $ne: userId } // Exclude pools created by user
     })
-      .populate('createdBy', 'name email phone trustScore')
-      .populate('participants.user', 'name email phone trustScore')
+      // FIX: Include 'gender' in population
+      .populate('createdBy', 'name email phone trustScore gender')
+      .populate('participants.user', 'name email phone trustScore gender')
       .sort({ date: -1 });
 
     res.json({
@@ -158,8 +158,9 @@ router.get('/my-pools', protect, async (req, res) => {
 router.get('/:id', protect, async (req, res) => {
   try {
     const pool = await Pool.findById(req.params.id)
-      .populate('createdBy', 'name email phone trustScore community')
-      .populate('participants.user', 'name email phone trustScore');
+      // FIX: Include 'gender' in population
+      .populate('createdBy', 'name email phone trustScore community gender')
+      .populate('participants.user', 'name email phone trustScore gender');
 
     if (!pool) {
       return res.status(404).json({
@@ -256,9 +257,9 @@ router.post('/:id/join', protect, async (req, res) => {
 
     await pool.save();
 
-    // Populate and return updated pool
-    await pool.populate('createdBy', 'name email phone trustScore');
-    await pool.populate('participants.user', 'name email phone trustScore');
+    // FIX: Include 'gender' in population
+    await pool.populate('createdBy', 'name email phone trustScore gender');
+    await pool.populate('participants.user', 'name email phone trustScore gender');
 
     res.json({
       message: 'Successfully joined the pool',
