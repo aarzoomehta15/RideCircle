@@ -25,18 +25,25 @@ const feedbackSchema = new mongoose.Schema({
   comment: {
     type: String,
     trim: true,
-    maxlength: [500, 'Comment cannot be more than 500 characters']
+    maxlength: [500, 'Comment cannot be more than 500 characters'],
+    default: ''
   },
   safetyFlag: {
     type: Boolean,
     default: false
   },
+
+  // ⭐ FIXED: categories ALWAYS exists now
   categories: {
-    punctuality: { type: Number, min: 1, max: 5 },
-    safety: { type: Number, min: 1, max: 5 },
-    communication: { type: Number, min: 1, max: 5 },
-    vehicle: { type: Number, min: 1, max: 5 }
+    type: Object,
+    default: {
+      punctuality: null,
+      safety: null,
+      communication: null,
+      vehicle: null
+    }
   },
+
   createdAt: {
     type: Date,
     default: Date.now
@@ -44,7 +51,10 @@ const feedbackSchema = new mongoose.Schema({
 });
 
 // Prevent duplicate feedback for the same ride and users
-feedbackSchema.index({ rideId: 1, raterId: 1, ratedUserId: 1 }, { unique: true });
+feedbackSchema.index(
+  { rideId: 1, raterId: 1, ratedUserId: 1 },
+  { unique: true }
+);
 
 // Index for efficient queries
 feedbackSchema.index({ ratedUserId: 1 });

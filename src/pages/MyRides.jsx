@@ -59,8 +59,13 @@ const MyRides = () => {
 
   const handleRateSubmit = async (ratingData) => {
     try {
-      // NOTE: ratingData is now the full payload including rideId and ratedUserId
-      await feedbackService.submitFeedback(ratingData);
+      const payload = {
+        rideId: selectedRide._id,  // <-- REQUIRED
+        ...ratingData             // includes ratedUserId, score, comment, safetyFlag
+      };
+
+      await feedbackService.submitFeedback(payload);
+
       alert("Rating submitted successfully!");
       setSelectedRide(null);
       loadMyRides(); // Reload to update rated status
@@ -68,6 +73,7 @@ const MyRides = () => {
       alert(err || "Failed to submit rating");
     }
   };
+
   
   // NEW: Handle participant leaving a pool
   const handleLeavePool = async (poolId, date, time) => {

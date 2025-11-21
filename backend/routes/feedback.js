@@ -91,22 +91,29 @@ router.post('/', protect, [
     }
 
     // Create feedback
-    const feedback = await Feedback.create({
-      rideId,
-      raterId,
-      ratedUserId,
-      score,
-      comment,
-      safetyFlag: safetyFlag || false,
-      categories: categories || {}
-    });
+    // Create feedback
+  const feedback = await Feedback.create({
+    rideId,
+    raterId,
+    ratedUserId,
+    score,
+    comment,
+    safetyFlag: safetyFlag || false,
+    categories: {
+      punctuality: categories?.punctuality ?? null,
+      safety: categories?.safety ?? null,
+      communication: categories?.communication ?? null,
+      vehicle: categories?.vehicle ?? null
+    }
+  });
+
 
     // Update user's trust score based on feedback
     await updateTrustScore(ratedUserId);
 
     // Populate feedback data
-    await feedback.populate('raterId', 'name email');
-    await feedback.populate('ratedUserId', 'name email');
+    await feedback.populate('raterId', 'name email gender');
+    await feedback.populate('ratedUserId', 'name email gender');
 
     res.status(201).json({
       message: 'Feedback submitted successfully',
@@ -126,8 +133,8 @@ router.post('/', protect, [
 router.get('/user/:userId', protect, async (req, res) => {
   try {
     const feedbacks = await Feedback.find({ ratedUserId: req.params.userId })
-      .populate('raterId', 'name email')
-      .populate('rideId', 'source destination date')
+      .populate('raterId', 'name email gender')
+      .populate('rideId')
       .sort({ createdAt: -1 });
 
     // Calculate average rating
@@ -155,8 +162,8 @@ router.get('/user/:userId', protect, async (req, res) => {
 router.get('/pool/:poolId', protect, async (req, res) => {
   try {
     const feedbacks = await Feedback.find({ rideId: req.params.poolId })
-      .populate('raterId', 'name email')
-      .populate('ratedUserId', 'name email')
+      .populate('raterId', 'name email gender')
+      .populate('ratedUserId', 'name email gender')
       .sort({ createdAt: -1 });
 
     res.json({ feedbacks });
@@ -174,8 +181,11 @@ router.get('/pool/:poolId', protect, async (req, res) => {
 router.get('/my-feedback', protect, async (req, res) => {
   try {
     const feedbacks = await Feedback.find({ raterId: req.user._id })
-      .populate('ratedUserId', 'name email')
-      .populate('rideId', 'source destination date')
+      .populate('ratedUserId', 'name email gender')
+      .populate({
+        path: 'rideId',
+        select: 'source destination date time createdBy participants status'
+      })
       .sort({ createdAt: -1 });
 
     res.json({ feedbacks });
@@ -186,6 +196,7 @@ router.get('/my-feedback', protect, async (req, res) => {
     });
   }
 });
+
 
 // Helper function to update trust score
 async function updateTrustScore(userId) {
