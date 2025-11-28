@@ -499,30 +499,26 @@ router.patch('/:id/status', protect, [
     }
     
     // LOGIC FOR COMPLETION (creator)
-    if (newStatus === 'completed') {
-        // Ensure the ride time has actually passed before marking as completed
-        const [hours, minutes] = pool.time.split(':').map(Number);
-        const poolDateTime = new Date(pool.date);
-        poolDateTime.setHours(hours, minutes, 0, 0);
+if (newStatus === 'completed') {
+    // Combine date + time correctly
+    const poolDateTime = new Date(`${pool.date}T${pool.time}:00`);
 
-        if (poolDateTime.getTime() > Date.now()) {
-            return res.status(400).json({
-                message: 'Cannot mark a pool as completed before its scheduled time.'
-            });
-        }
-        
-        // Normal transition to completed
-        pool.status = newStatus;
-        // Also update updatedAt to use as a cleanup timestamp
-        pool.updatedAt = new Date(); 
-        await pool.save();
-        
-        return res.json({
-            message: 'Pool status updated to completed.',
-            pool
+    if (poolDateTime.getTime() > Date.now()) {
+        return res.status(400).json({
+            message: 'Cannot mark a pool as completed before its scheduled time.'
         });
     }
-    
+
+    pool.status = newStatus;
+    pool.updatedAt = new Date();
+    await pool.save();
+
+    return res.json({
+        message: 'Pool status updated to completed.',
+        pool
+    });
+}
+
     // Default status update for other cases (e.g., ongoing, upcoming if somehow triggered)
     pool.status = newStatus;
     pool.updatedAt = new Date(); 
