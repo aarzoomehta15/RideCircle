@@ -22,16 +22,6 @@ const feedbackSchema = new mongoose.Schema({
     min: [1, 'Rating must be at least 1'],
     max: [5, 'Rating cannot be more than 5']
   },
-  comment: {
-    type: String,
-    trim: true,
-    maxlength: [500, 'Comment cannot be more than 500 characters'],
-    default: ''
-  },
-  safetyFlag: {
-    type: Boolean,
-    default: false
-  },
 
   categories: {
     type: Object,

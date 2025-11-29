@@ -14,8 +14,6 @@ router.post('/', protect, [
   body('rideId').isMongoId().withMessage('Valid ride ID is required'),
   body('ratedUserId').isMongoId().withMessage('Valid user ID is required'),
   body('score').isInt({ min: 1, max: 5 }).withMessage('Score must be between 1 and 5'),
-  body('comment').optional().trim().isLength({ max: 500 }).withMessage('Comment too long'),
-  body('safetyFlag').optional().isBoolean().withMessage('Safety flag must be boolean'),
   body('categories.punctuality').optional().isInt({ min: 1, max: 5 }).withMessage('Invalid punctuality rating'),
   body('categories.safety').optional().isInt({ min: 1, max: 5 }).withMessage('Invalid safety rating'),
   body('categories.communication').optional().isInt({ min: 1, max: 5 }).withMessage('Invalid communication rating'),
@@ -31,7 +29,7 @@ router.post('/', protect, [
       });
     }
 
-    const { rideId, ratedUserId, score, comment, safetyFlag, categories } = req.body;
+    const { rideId, ratedUserId, score, categories } = req.body;
     const raterId = req.user._id;
 
     // Check if ride exists and is completed
@@ -97,8 +95,6 @@ router.post('/', protect, [
     raterId,
     ratedUserId,
     score,
-    comment,
-    safetyFlag: safetyFlag || false,
     categories: {
       punctuality: categories?.punctuality ?? null,
       safety: categories?.safety ?? null,
