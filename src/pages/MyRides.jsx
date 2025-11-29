@@ -292,8 +292,8 @@ const MyRides = () => {
 
                       {/* NEW BUTTONS/ACTIONS */}
                       <div className="flex flex-col gap-2">
-                        {/* Creator: Mark as Completed */}
-                        {timePassed && isCreator && pool.status === 'upcoming' && (
+                        {/* Creator: Mark as Completed - REMOVED TIME CHECK TO ALLOW ALWAYS */}
+                        {isCreator && pool.status === 'upcoming' && (
                             <button
                                 onClick={() => handleUpdatePoolStatus(pool._id, 'completed')}
                                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2 text-sm"

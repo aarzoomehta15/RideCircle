@@ -69,7 +69,7 @@ const Dashboard = () => {
       setError(null);
       const [poolsData, feedbackData] = await Promise.all([
         poolService.getMyPools(),
-        feedbackService.getMyFeedback(),
+        feedbackService.getFeedbackForUser(user.id),
       ]);
       setPools(poolsData.pools || []);
       setFeedbacks(feedbackData.feedbacks || []);

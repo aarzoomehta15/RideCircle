@@ -499,25 +499,17 @@ router.patch('/:id/status', protect, [
     }
     
     // LOGIC FOR COMPLETION (creator)
-if (newStatus === 'completed') {
-    // Combine date + time correctly
-    const poolDateTime = new Date(`${pool.date}T${pool.time}:00`);
+    if (newStatus === 'completed') {
+        // CHANGE: Removed time check restriction to allow manual completion anytime
+        pool.status = newStatus;
+        pool.updatedAt = new Date();
+        await pool.save();
 
-    if (poolDateTime.getTime() > Date.now()) {
-        return res.status(400).json({
-            message: 'Cannot mark a pool as completed before its scheduled time.'
+        return res.json({
+            message: 'Pool status updated to completed.',
+            pool
         });
     }
-
-    pool.status = newStatus;
-    pool.updatedAt = new Date();
-    await pool.save();
-
-    return res.json({
-        message: 'Pool status updated to completed.',
-        pool
-    });
-}
 
     // Default status update for other cases (e.g., ongoing, upcoming if somehow triggered)
     pool.status = newStatus;
