@@ -40,7 +40,6 @@ const CreatePool = () => {
     time: "",
     maxSeats: 4,
     type: defaultPoolType, // CHANGE: Use the first available type as default
-    fare: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -92,11 +91,6 @@ const CreatePool = () => {
       setError("Please select date and time");
       return;
     }
-
-    if (!formData.fare || formData.fare <= 0) {
-      setError("Please enter a valid fare amount");
-      return;
-    }
     
     // NEW TIME VALIDATION: Prevent setting a time that is in the past for today
     const now = new Date();
@@ -131,7 +125,6 @@ const CreatePool = () => {
     try {
       const poolData = {
         ...formData,
-        fare: parseFloat(formData.fare),
         maxSeats: parseInt(formData.maxSeats),
       };
 
@@ -312,21 +305,6 @@ const CreatePool = () => {
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Estimated Fare per Person (₹) *
-                </label>
-                <input
-                  type="number"
-                  name="fare"
-                  value={formData.fare}
-                  onChange={handleChange}
-                  placeholder="100"
-                  min="1"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  required
-                />
-              </div>
             </div>
 
             {/* Info Box */}
@@ -337,10 +315,6 @@ const CreatePool = () => {
               <ul className="text-sm text-blue-800 space-y-1">
                 <li>
                   • You will be automatically added as the first participant
-                </li>
-                <li>
-                  • The fare shown is per person and will be split among all
-                  riders
                 </li>
                 <li>• You can cancel the pool anytime before the ride date</li>
                 <li>

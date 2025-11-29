@@ -33,7 +33,6 @@ const feedbackSchema = new mongoose.Schema({
     default: false
   },
 
-  // ⭐ FIXED: categories ALWAYS exists now
   categories: {
     type: Object,
     default: {

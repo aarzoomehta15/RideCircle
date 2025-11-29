@@ -60,9 +60,6 @@ const PoolCard = ({ pool, creator, onJoin, showJoinButton = false }) => {
                 <Users size={16} />
                 {pool.participants?.length || 0}/{pool.maxSeats} seats
               </span>
-              <span className="text-sm font-semibold text-green-600">
-                ₹{pool.fare}/person
-              </span>
               <span
                 className={`px-2 py-1 rounded text-xs ${
                   pool.type === "women-only"

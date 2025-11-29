@@ -292,8 +292,8 @@ const MyRides = () => {
 
                       {/* NEW BUTTONS/ACTIONS */}
                       <div className="flex flex-col gap-2">
-                        {/* Creator: Mark as Completed - REMOVED TIME CHECK TO ALLOW ALWAYS */}
-                        {isCreator && pool.status === 'upcoming' && (
+                        {/* Creator: Mark as Completed */}
+                        {timePassed && isCreator && pool.status === 'upcoming' && (
                             <button
                                 onClick={() => handleUpdatePoolStatus(pool._id, 'completed')}
                                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition flex items-center gap-2 text-sm"
@@ -359,8 +359,24 @@ const MyRides = () => {
           ) : (
             <div className="space-y-4">
               {completedRides.map((pool) => {
-                // Check if the current user has rated *any* co-rider for this pool
-                const hasRated = feedbacks.some((f) => f.rideId === pool._id);
+                // 1. Filter eligible co-riders (joined & not me)
+                const eligibleCoRiders = pool.participants.filter(
+                    p => p.user._id !== user.id && p.status === 'joined'
+                );
+
+                // 2. Get IDs of users I have already rated for this ride
+                const ratedUserIds = feedbacks
+                    .filter(f => {
+                        // Handle both populated object and string ID scenarios for robustness
+                        const fRideId = typeof f.rideId === 'object' ? f.rideId._id : f.rideId;
+                        return fRideId === pool._id;
+                    })
+                    .map(f => typeof f.ratedUserId === 'object' ? f.ratedUserId._id : f.ratedUserId);
+
+                // 3. Check if ALL eligible co-riders have been rated
+                const hasCoRiders = eligibleCoRiders.length > 0;
+                const isAllRated = hasCoRiders && eligibleCoRiders.every(p => ratedUserIds.includes(p.user._id));
+
                 return (
                   <div
                     key={pool._id}
@@ -390,19 +406,24 @@ const MyRides = () => {
                         </div>
                       </div>
 
-                      {!hasRated ? (
-                        <button
-                          onClick={() => setSelectedRide(pool)}
-                          className="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition"
-                        >
-                          Rate Co-riders
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2 text-green-600">
-                          <CheckCircle size={20} />
-                          <span className="text-sm font-medium">Rated</span>
-                        </div>
-                      )}
+                      {/* MODIFIED BUTTON LOGIC */}
+                      <button
+                        onClick={() => !isAllRated && setSelectedRide(pool)}
+                        disabled={isAllRated || !hasCoRiders}
+                        className={`px-4 py-2 rounded-lg transition text-white flex items-center gap-2 ${
+                          isAllRated || !hasCoRiders
+                            ? "bg-gray-400 cursor-not-allowed"
+                            : "bg-yellow-500 hover:bg-yellow-600"
+                        }`}
+                      >
+                        {isAllRated ? (
+                            <>
+                                <CheckCircle size={18} /> Rated
+                            </>
+                        ) : (
+                            "Rate Co-riders"
+                        )}
+                      </button>
                     </div>
                   </div>
                 );

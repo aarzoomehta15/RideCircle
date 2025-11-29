@@ -39,11 +39,6 @@ const poolSchema = new mongoose.Schema({
     min: [2, 'Minimum 2 seats required'],
     max: [6, 'Maximum 6 seats allowed']
   },
-  fare: {
-    type: Number,
-    required: [true, 'Fare is required'],
-    min: [1, 'Fare must be at least 1']
-  },
   type: {
     type: String,
     enum: ['open', 'women-only', 'community'],

@@ -63,7 +63,6 @@ router.post('/', protect, [
   body('date').isISO8601().withMessage('Valid date is required'),
   body('time').matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Time must be in HH:MM format'),
   body('maxSeats').isInt({ min: 2, max: 6 }).withMessage('Max seats must be between 2 and 6'),
-  body('fare').isFloat({ min: 1 }).withMessage('Fare must be at least 1'),
   body('type').optional().isIn(['open', 'women-only', 'community']).withMessage('Invalid pool type')
 ], async (req, res) => {
   try {
